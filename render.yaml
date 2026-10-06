@@ -8,7 +8,8 @@ services:
     name: anki-clicker-api
     runtime: python
     plan: free
-    rootDir: server                      # the server code lives in server/
+    region: ohio                         # same area as the Neon database (AWS US East 2)
+    rootDir: server                     # the server code lives in server/
     buildCommand: pip install -r requirements.txt
     # $PORT is chosen by Render. 0.0.0.0 means "accept connections from
     # outside this machine" (127.0.0.1 would only accept local ones).
