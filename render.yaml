@@ -1,0 +1,24 @@
+# Render "Blueprint": the server's hosting setup written as a file, so it's
+# version-controlled with your code instead of living only in clicks on a
+# website. This idea is called "infrastructure as code".
+#
+# In Render: New > Blueprint > pick this GitHub repo. Render reads this file.
+services:
+  - type: web
+    name: anki-clicker-api
+    runtime: python
+    plan: free
+    rootDir: server                      # the server code lives in server/
+    buildCommand: pip install -r requirements.txt
+    # $PORT is chosen by Render. 0.0.0.0 means "accept connections from
+    # outside this machine" (127.0.0.1 would only accept local ones).
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health             # Render pings this to know the app is up
+    autoDeploy: true                     # every git push to main redeploys
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: DATABASE_URL
+        sync: false                      # Render asks you to paste it (from Neon)
+      - key: ADMIN_TOKEN
+        generateValue: true              # Render invents a random secret for you

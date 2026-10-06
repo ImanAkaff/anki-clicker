@@ -1,0 +1,15 @@
+# Web framework: turns Python functions into HTTP endpoints
+fastapi>=0.110
+# The server program that actually listens on a port and hands requests to FastAPI
+uvicorn[standard]>=0.29
+# Talks to the database (SQLite locally, Postgres in production) with Python objects
+sqlalchemy>=2.0
+# Validates incoming JSON against the shapes in app/schemas.py
+pydantic>=2.0
+
+# The driver that lets Python talk to Postgres (used in production)
+psycopg[binary]>=3.1
+
+# Only needed for running tests:
+pytest>=8
+httpx>=0.27

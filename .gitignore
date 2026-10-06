@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Local databases and generated data (never commit real or fake user data)
+*.db
+*.sqlite3
+*.jsonl
+ground_truth.json
+addon/anki_clicker/user_files/
+
+# Secrets
+.env
+
+# Build output
+*.ankiaddon
