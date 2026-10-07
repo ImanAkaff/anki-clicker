@@ -16,3 +16,6 @@ addon/anki_clicker/user_files/
 
 # Build output
 *.ankiaddon
+
+# Anki writes the user's add-on settings here, including their token
+addon/anki_clicker/meta.json
