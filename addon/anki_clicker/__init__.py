@@ -86,6 +86,11 @@ def on_js_message(handled, message: str, context):
     if not message.startswith("ankiclicker:"):
         return handled
 
+    if message == "ankiclicker:stats":
+        # The stats page asking for its data. Whatever we return here, Anki
+        # converts to JSON and hands to the page's callback.
+        return (True, _stats_payload)
+
     _, kind, payload = message.split(":", 2)
     if kind == "btn":
         handle_button(payload)
@@ -354,10 +359,11 @@ def _next_answers(rows: list[dict]) -> dict[int, int]:
 
 
 _stats_window = None  # keep a reference, or Python garbage-collects the window
+_stats_payload = None  # the numbers the open stats page asks for
 
 
 def show_stats() -> None:
-    global _stats_window
+    global _stats_window, _stats_payload
     removed = remove_undone_reviews()
     if removed:
         tooltip(f"Removed {removed} undone review(s) from the log.")
@@ -379,6 +385,7 @@ def show_stats() -> None:
         "last_sync": _last_sync_message,
         "connected": bool(config().get("token")),
     }
+    _stats_payload = payload
     _stats_window = StatsDialog(payload)
     _stats_window.show()
 

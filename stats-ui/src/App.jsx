@@ -5,8 +5,9 @@ import { BarChart, LineChart } from "./charts.jsx";
 
 function useAnkiData() {
   const [data, setData] = useState(window.__ankiClickerData || null);
+  const [, force] = useState(0);
   useEffect(() => {
-    const on = () => setData(window.__ankiClickerData);
+    const on = () => { setData(window.__ankiClickerData || null); force((n) => n + 1); };
     window.addEventListener("ankiclicker:data", on);
     return () => window.removeEventListener("ankiclicker:data", on);
   }, []);
@@ -175,6 +176,15 @@ export default function App() {
     if (data?.meta) document.documentElement.dataset.theme = data.meta.night_mode ? "dark" : "light";
   }, [data]);
 
+  if (!data && window.__ankiClickerTimeout) {
+    return (
+      <div className="empty">
+        Couldn't load your stats.<br />
+        Close this window and open Tools → Anki Clicker → Stats again. If it keeps happening,
+        send Azeem this: <code>bridge={String(window.__ankiClickerTimeout.hasBridge)}</code>
+      </div>
+    );
+  }
   if (!data) return <div className="empty">Loading your stats…</div>;
   const o = data.overview;
   const m = data.meta || {};

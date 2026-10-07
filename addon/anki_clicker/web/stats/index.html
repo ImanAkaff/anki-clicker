@@ -5,15 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anki Clicker insights</title>
     <script>
-      // Python calls this after the page loads, passing all the numbers as JSON
-      // (see StatsDialog in __init__.py). It may arrive before or after React
-      // starts, so we store it and fire an event; React picks it up either way.
+      // Getting the numbers from Python. Two routes, whichever arrives first:
+      //  1. PULL: once Anki's bridge (pycmd) exists, the page asks Python for
+      //     the data and gets it back in a callback. This is the main route.
+      //  2. PUSH: Python also calls ankiClickerSetData() after the page loads.
+      // Either way the data is stored and an event tells React to draw it.
       window.ankiClickerSetData = function (data) {
+        if (!data || window.__ankiClickerData) return;
         window.__ankiClickerData = data;
         window.dispatchEvent(new Event("ankiclicker:data"));
       };
+      (function askPython() {
+        var started = Date.now();
+        var timer = setInterval(function () {
+          if (window.__ankiClickerData) return clearInterval(timer);
+          if (typeof window.pycmd === "function") {
+            // pycmd is created by Anki a moment after the page starts loading.
+            window.pycmd("ankiclicker:stats", window.ankiClickerSetData);
+          }
+          if (Date.now() - started > 8000) {
+            // Give up and let React show a helpful message instead of spinning forever.
+            clearInterval(timer);
+            window.__ankiClickerTimeout = { hasBridge: typeof window.pycmd === "function" };
+            window.dispatchEvent(new Event("ankiclicker:data"));
+          }
+        }, 250);
+      })();
     </script>
-    <script type="module" crossorigin src="./assets/index-q3KOF0D3.js"></script>
+    <script type="module" crossorigin src="./assets/index-BbdWEAQa.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-CasLMj8W.css">
   </head>
   <body>
