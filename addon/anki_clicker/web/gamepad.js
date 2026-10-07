@@ -31,6 +31,25 @@
   }
   pycmd("ankiclicker:status:" + JSON.stringify({ api: true }));
 
+  // Diagnostics for the first minute: report which controllers the page can
+  // see, whenever that changes. Controllers stay hidden from web pages until
+  // a button is pressed (a browser privacy rule), so "0 seen" before any
+  // press is normal; "0 seen" AFTER pressing buttons means Windows/Anki isn't
+  // passing the controller through.
+  var lastSeen = null, diagStart = Date.now();
+  function reportSeen() {
+    var pads = Array.prototype.filter.call(navigator.getGamepads() || [], Boolean);
+    var seen = pads.map(function (p) {
+      return p.id + " [mapping=" + (p.mapping || "none") + ", buttons=" + p.buttons.length + ", axes=" + p.axes.length + "]";
+    }).join(" | ") || "none";
+    if (seen !== lastSeen) {
+      lastSeen = seen;
+      pycmd("ankiclicker:diag:" + "controllers seen: " + seen + " (focused=" + document.hasFocus() + ")");
+    }
+    if (Date.now() - diagStart < 60000) setTimeout(reportSeen, 1000);
+  }
+  reportSeen();
+
   var AXIS_THRESHOLD = 0.6; // how far a stick/d-pad axis must move to count
   var previous = {};         // controller index -> {buttonId: true/false}
 

@@ -107,6 +107,7 @@ def debug(msg: str) -> None:
 def on_webview_set_content(web_content, context) -> None:
     # Many screens in Anki are web views; only add our script to the reviewer.
     if isinstance(context, Reviewer):
+        debug("review screen: adding controller script")
         cfg = config()
         # Settings gamepad.js reads when it starts: which stick axis scrolls.
         web_content.head += (
@@ -137,7 +138,10 @@ def on_js_message(handled, message: str, context):
         return (True, None)
 
     _, kind, payload = message.split(":", 2)
+    if kind in ("status", "connected", "diag"):
+        debug(f"controller {kind}: {payload}")
     if kind == "btn":
+        debug(f"controller button pressed: {payload}")
         handle_button(payload)
     elif kind == "connected":
         info = json.loads(payload)
