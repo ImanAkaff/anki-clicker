@@ -1,8 +1,8 @@
 # Release pipeline (GitHub Actions).
 #
-# GitHub runs this on its own machines whenever a version tag is pushed:
-#     git tag v1.1.0
-#     git push origin v1.1.0
+# Two ways to start a release:
+#   - On GitHub: Actions tab > Release > "Run workflow", type a version (1.1.0).
+#   - From a terminal: git tag v1.1.0 && git push origin v1.1.0
 #
 # It runs the server tests, stamps the version into the add-on, zips it into
 # anki_clicker.ankiaddon, and publishes a GitHub Release with that file
@@ -15,6 +15,15 @@ name: Release
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 1.1.0"
+        required: true
+
+env:
+  # The tag this release gets: from the button's input, or the pushed tag.
+  TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
 
 permissions:
   contents: write   # needed to create the release
@@ -43,7 +52,9 @@ jobs:
 
       - name: Stamp version from the tag
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"          # v1.1.0 -> 1.1.0
+          VERSION="${TAG#v}"                      # v1.1.0 -> 1.1.0
+          # Refuse anything that isn't a plain version number.
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Bad version: $VERSION"; exit 1; }
           python - <<EOF
           import json
           p = "addon/anki_clicker/manifest.json"
@@ -66,6 +77,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" anki_clicker.ankiaddon \
-            --title "Anki Clicker $GITHUB_REF_NAME" \
+          # Creates the tag too (at this exact commit) if it doesn't exist yet.
+          gh release create "$TAG" anki_clicker.ankiaddon \
+            --target "$GITHUB_SHA" \
+            --title "Anki Clicker $TAG" \
             --generate-notes
