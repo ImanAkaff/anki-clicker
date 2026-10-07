@@ -25,6 +25,16 @@
   if (window.__ankiClickerLoaded) return;
   window.__ankiClickerLoaded = true;
 
+  // Anki creates pycmd (our channel to Python) a moment AFTER the page starts
+  // loading, so calling it straight away throws an error and kills this whole
+  // script. Wait for it, then start.
+  (function whenBridgeReady() {
+    if (typeof window.pycmd === "function") return start();
+    setTimeout(whenBridgeReady, 100);
+  })();
+
+  function start() {
+
   if (typeof navigator.getGamepads !== "function") {
     pycmd("ankiclicker:status:" + JSON.stringify({ api: false }));
     return;
@@ -118,4 +128,5 @@
   });
 
   requestAnimationFrame(poll);
+  }
 })();
