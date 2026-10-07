@@ -69,6 +69,24 @@ def config() -> dict:
 # this one connection is only ever used from there.
 _db = storage.connect(DB_PATH)
 
+# Diagnostic log: each step of opening the stats window is written here,
+# so problems can be traced without guessing. Kept small: newest 200 lines.
+DEBUG_LOG = os.path.join(DATA_DIR, "debug.log")
+
+
+def debug(msg: str) -> None:
+    try:
+        lines = []
+        if os.path.exists(DEBUG_LOG):
+            with open(DEBUG_LOG, encoding="utf-8") as f:
+                lines = f.readlines()[-199:]
+        lines.append(time.strftime("%H:%M:%S ") + msg.replace("\n", " ")[:500] + "\n")
+        with open(DEBUG_LOG, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+    except Exception:
+        pass  # logging must never break the add-on
+
+
 # ---------------------------------------------------------------- 1. load gamepad.js into the reviewer
 
 def on_webview_set_content(web_content, context) -> None:
@@ -89,7 +107,11 @@ def on_js_message(handled, message: str, context):
     if message == "ankiclicker:stats":
         # The stats page asking for its data. Whatever we return here, Anki
         # converts to JSON and hands to the page's callback.
+        debug(f"page asked for data; have payload: {_stats_payload is not None}")
         return (True, _stats_payload)
+    if message.startswith("ankiclicker:log:"):
+        debug("page: " + message[len("ankiclicker:log:"):])
+        return (True, None)
 
     _, kind, payload = message.split(":", 2)
     if kind == "btn":
@@ -316,9 +338,12 @@ class StatsDialog(QDialog):
         self._payload = json.dumps(payload)
         # When the page has finished loading, push the data into it.
         qconnect(self.web.loadFinished, self._on_loaded)
-        self.web.load_url(QUrl(f"{mw.serverURL()}_addons/{ADDON_PACKAGE}/web/stats/index.html"))
+        url = f"{mw.serverURL()}_addons/{ADDON_PACKAGE}/web/stats/index.html"
+        debug(f"opening stats window: {url} (payload {len(self._payload)} chars)")
+        self.web.load_url(QUrl(url))
 
     def _on_loaded(self, ok: bool) -> None:
+        debug(f"page finished loading, ok={ok}")
         if ok:
             self.web.eval(f"window.ankiClickerSetData({self._payload});")
 
@@ -364,6 +389,7 @@ _stats_payload = None  # the numbers the open stats page asks for
 
 def show_stats() -> None:
     global _stats_window, _stats_payload
+    debug("--- Stats clicked")
     removed = remove_undone_reviews()
     if removed:
         tooltip(f"Removed {removed} undone review(s) from the log.")

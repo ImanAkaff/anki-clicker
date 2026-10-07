@@ -5,6 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anki Clicker insights</title>
     <script>
+      // Diagnostics: report what happens on this page to the add-on's debug.log.
+      // Messages wait in a queue until Anki's bridge (pycmd) is available.
+      window.__log = [];
+      window.ankiLog = function (msg) { window.__log.push(String(msg)); flushLog(); };
+      function flushLog() {
+        if (typeof window.pycmd !== "function") return;
+        while (window.__log.length) window.pycmd("ankiclicker:log:" + window.__log.shift());
+      }
+      window.addEventListener("error", function (e) {
+        ankiLog("error: " + e.message + " @ " + (e.filename || (e.target && (e.target.src || e.target.href)) || "?"));
+      }, true);
+      window.addEventListener("unhandledrejection", function (e) { ankiLog("promise error: " + e.reason); });
+      ankiLog("page script started, url=" + location.href);
+    </script>
+    <script>
       // Getting the numbers from Python. Two routes, whichever arrives first:
       //  1. PULL: once Anki's bridge (pycmd) exists, the page asks Python for
       //     the data and gets it back in a callback. This is the main route.
@@ -21,18 +36,24 @@
           if (window.__ankiClickerData) return clearInterval(timer);
           if (typeof window.pycmd === "function") {
             // pycmd is created by Anki a moment after the page starts loading.
-            window.pycmd("ankiclicker:stats", window.ankiClickerSetData);
+            if (!window.__askedOnce) { window.__askedOnce = true; ankiLog("bridge ready, asking for data"); }
+            flushLog();
+            window.pycmd("ankiclicker:stats", function (d) {
+              if (!window.__answered) { window.__answered = true; ankiLog("got answer: " + (d ? "data" : "empty")); }
+              window.ankiClickerSetData(d);
+            });
           }
           if (Date.now() - started > 8000) {
             // Give up and let React show a helpful message instead of spinning forever.
             clearInterval(timer);
             window.__ankiClickerTimeout = { hasBridge: typeof window.pycmd === "function" };
+            ankiLog("gave up after 8s; bridge=" + (typeof window.pycmd === "function") + " react=" + !!document.querySelector(".empty"));
             window.dispatchEvent(new Event("ankiclicker:data"));
           }
         }, 250);
       })();
     </script>
-    <script type="module" crossorigin src="./assets/index-BbdWEAQa.js"></script>
+    <script type="module" crossorigin src="./assets/index-DPeWQgiu.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-CasLMj8W.css">
   </head>
   <body>
