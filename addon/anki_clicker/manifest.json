@@ -1,4 +1,5 @@
 {
     "package": "anki_clicker",
-    "name": "Anki Clicker"
+    "name": "Anki Clicker",
+    "human_version": "1.0.0"
 }

@@ -1,0 +1,71 @@
+# Release pipeline (GitHub Actions).
+#
+# GitHub runs this on its own machines whenever a version tag is pushed:
+#     git tag v1.1.0
+#     git push origin v1.1.0
+#
+# It runs the server tests, stamps the version into the add-on, zips it into
+# anki_clicker.ankiaddon, and publishes a GitHub Release with that file
+# attached. Friends' add-ons check for that release when Anki starts.
+#
+# If the tests fail, nothing is published: a broken version can't reach anyone.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write   # needed to create the release
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Server tests
+        working-directory: server
+        run: |
+          pip install -r requirements.txt
+          pytest -q
+      - name: Add-on code compiles
+        run: python -m py_compile addon/anki_clicker/*.py
+
+  release:
+    needs: test     # only runs if every test passed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp version from the tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"          # v1.1.0 -> 1.1.0
+          python - <<EOF
+          import json
+          p = "addon/anki_clicker/manifest.json"
+          m = json.load(open(p))
+          m["human_version"] = "$VERSION"
+          json.dump(m, open(p, "w"), indent=4)
+          EOF
+          cat addon/anki_clicker/manifest.json
+
+      - name: Build anki_clicker.ankiaddon
+        run: |
+          cd addon/anki_clicker
+          # An .ankiaddon is just a zip of the add-on folder's contents.
+          # Never include anyone's data, settings, or caches.
+          zip -r ../../anki_clicker.ankiaddon . -x "user_files/*" "meta.json" "__pycache__/*" "*/__pycache__/*"
+          cd ../..
+          unzip -l anki_clicker.ankiaddon
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" anki_clicker.ankiaddon \
+            --title "Anki Clicker $GITHUB_REF_NAME" \
+            --generate-notes

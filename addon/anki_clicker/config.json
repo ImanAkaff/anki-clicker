@@ -2,6 +2,7 @@
     "server_url": "https://anki-clicker-api.onrender.com",
     "token": "",
     "sync_enabled": true,
+    "auto_update": true,
     "scroll_axis": 1,
     "scroll_invert": false,
     "button_map": {

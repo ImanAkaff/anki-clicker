@@ -6,6 +6,7 @@ Easiest way to connect: **Tools → Anki Clicker → Connect…** and paste your
 - `token`: your personal key from Azeem. Keep it private.
 - `sync_enabled`: `true` to upload your review timings, `false` to stop.
 - `button_map`: which controller button does what. Actions: `show_answer`, `again`, `hard`, `good`, `easy`, `undo`, `scroll_up`, `scroll_down`.
+- `auto_update`: `true` to be offered new versions when Anki starts, `false` to stop.
 - `scroll_axis`: which stick axis scrolls the card smoothly (`1` = left stick up/down on most controllers; `-1` turns stick scrolling off).
 - `scroll_invert`: `true` if pushing the stick up scrolls the wrong way.
 

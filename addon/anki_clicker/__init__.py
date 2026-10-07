@@ -28,16 +28,17 @@ Python, which is why they can be tested without Anki running.
 
 import json
 import os
+import tempfile
 import time
 import uuid
 
 from aqt import gui_hooks, mw
 from aqt.qt import QAction, QDialog, QMenu, QUrl, QVBoxLayout, qconnect
 from aqt.reviewer import Reviewer
-from aqt.utils import getText, showInfo, tooltip
+from aqt.utils import askUser, getText, showInfo, tooltip
 from aqt.webview import AnkiWebView
 
-from . import analytics, storage, sync
+from . import analytics, storage, sync, updater
 
 # ---------------------------------------------------------------- paths & setup
 
@@ -46,6 +47,14 @@ ADDON_DIR = os.path.dirname(__file__)
 DATA_DIR = os.path.join(ADDON_DIR, "user_files")
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "clicker.sqlite3")
+
+# This copy's version, from manifest.json. The release pipeline stamps it
+# there from the git tag (v1.2.0 -> "1.2.0"), so it never has to be edited by hand.
+try:
+    with open(os.path.join(ADDON_DIR, "manifest.json"), encoding="utf-8") as _f:
+        VERSION = json.load(_f).get("human_version", "0.0.0")
+except Exception:
+    VERSION = "0.0.0"
 
 # The add-on's folder name, as Anki knows it (needed for web file URLs).
 ADDON_PACKAGE = mw.addonManager.addonFromModule(__name__)
@@ -443,6 +452,78 @@ def show_stats() -> None:
 
 # ---------------------------------------------------------------- 7. register everything with Anki
 
+# ---------------------------------------------------------------- 8. updates from GitHub Releases
+
+def _is_dev_copy() -> bool:
+    """True on Azeem's own machine, where the add-on folder is a link to his
+    project. Installing an update there would overwrite his source code
+    through the link, so the updater stays off."""
+    try:
+        if os.path.islink(ADDON_DIR) or getattr(os.path, "isjunction", lambda p: False)(ADDON_DIR):
+            return True
+        return os.path.realpath(ADDON_DIR) != os.path.abspath(ADDON_DIR)
+    except Exception:
+        return True  # unsure = don't touch anything
+
+
+def check_for_updates(manual: bool = False) -> None:
+    if _is_dev_copy():
+        if manual:
+            showInfo("Updates are off on this computer: it runs the add-on straight from "
+                     "your project folder.")
+        return
+    if not manual and config().get("auto_update") is False:
+        return
+
+    def ask_github():
+        return updater.check_latest(VERSION)  # background thread: network only
+
+    def on_checked(future):
+        try:
+            info = future.result()
+        except Exception as e:
+            debug(f"update check failed: {e}")
+            info = None
+        if not info:
+            if manual:
+                tooltip(f"Anki Clicker {VERSION} is the latest version.", period=5000)
+            return
+        notes = f"\n\nWhat's new:\n{info['notes']}" if info["notes"] else ""
+        if not askUser(f"Anki Clicker {info['version']} is available (you have {VERSION}).{notes}"
+                       "\n\nUpdate now? Your review history and settings are kept."):
+            return
+        tooltip("Downloading the update…", period=4000)
+        dest = os.path.join(tempfile.gettempdir(), updater.ASSET_NAME)
+        mw.taskman.run_in_background(lambda: updater.download(info["download_url"], dest),
+                                     lambda f: _install_update(f, info["version"]))
+
+    mw.taskman.run_in_background(ask_github, on_checked)
+
+
+def _install_update(future, version: str) -> None:
+    global _db
+    try:
+        path = future.result()
+    except Exception as e:
+        debug(f"update download failed: {e}")
+        showInfo("Couldn't download the update. It will be offered again next time Anki starts.")
+        return
+    # Anki moves user_files aside while it replaces the add-on. On Windows a
+    # folder can't be moved while a file inside it is open, so close our log
+    # database first, then reopen it once the new files are in place.
+    _db.close()
+    try:
+        result = mw.addonManager.install(path)
+    finally:
+        _db = storage.connect(DB_PATH)
+    if getattr(result, "errmsg", None):
+        debug(f"update install failed: {result.errmsg}")
+        showInfo(f"The update couldn't be installed ({result.errmsg}). Nothing was changed.")
+        return
+    debug(f"updated to {version}")
+    showInfo(f"Anki Clicker updated to {version}. Restart Anki to start using it.")
+
+
 def _safe(fn, passthrough_first_arg=False):
     """
     Wrap a hook so a bug in THIS add-on can never interrupt someone's
@@ -470,12 +551,14 @@ gui_hooks.reviewer_did_show_answer.append(_safe(on_show_answer))
 gui_hooks.reviewer_did_answer_card.append(_safe(on_answer))
 gui_hooks.reviewer_will_end.append(_safe(start_sync))   # upload when they leave the review screen
 gui_hooks.profile_did_open.append(_safe(start_sync))    # and catch up on anything left from last time
+gui_hooks.profile_did_open.append(_safe(check_for_updates))  # once per Anki start
 
 _menu = QMenu("Anki Clicker", mw)
 for _label, _fn in (
     ("Stats", show_stats),
     ("Sync now", lambda: start_sync(manual=True)),
     ("Connect…", connect_dialog),
+    (f"Check for updates (v{VERSION})", lambda: check_for_updates(manual=True)),
 ):
     _action = QAction(_label, mw)
     qconnect(_action.triggered, _fn)
