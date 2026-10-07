@@ -7,7 +7,7 @@ Easiest way to connect: **Tools → Anki Clicker → Connect…** and paste your
 - `sync_enabled`: `true` to upload your review timings, `false` to stop.
 - `button_map`: which controller button does what. Actions: `show_answer`, `again`, `hard`, `good`, `easy`, `undo`, `scroll_up`, `scroll_down`.
 - `auto_update`: `true` to be offered new versions when Anki starts, `false` to stop.
-- `scroll_axis`: which stick axis scrolls the card. `"auto"` (default) picks for you: axis `0` for a single sideways Joy-Con, `1` for other controllers. Set a number to force an axis, or `-1` to turn stick scrolling off.
+- `scroll_axis`: which stick axis scrolls the card. `"auto"` (default): the first stick scrolls whichever way you push it, so it works however you hold the controller. Set a number to use only that axis, or `-1` to turn stick scrolling off.
 - `scroll_invert`: `true` if pushing the stick up scrolls the wrong way.
 
 Pressing any answer button while the question is showing just reveals the answer first, so you can't grade a card you haven't seen.

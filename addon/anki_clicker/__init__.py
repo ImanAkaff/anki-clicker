@@ -176,8 +176,10 @@ def handle_button(button_id: str) -> None:
 
     action = {**DEFAULT_BUTTONS, **config().get("button_map", {})}.get(button_id)
     if action is None:
-        # This doubles as the way to discover button numbers.
-        tooltip(f"Button {button_id} isn't mapped. Add it in Tools > Add-ons > Config.")
+        # This doubles as the way to discover button numbers. Stick directions
+        # (100 and up) stay quiet: nudging a stick shouldn't nag anyone.
+        if button_id.isdigit() and int(button_id) < 100:
+            tooltip(f"Button {button_id} isn't mapped. Add it in Tools > Add-ons > Config.")
         return
 
     if action == "undo":

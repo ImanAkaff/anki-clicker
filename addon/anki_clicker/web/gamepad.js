@@ -70,10 +70,17 @@
   // sideways (Nintendo, only 2 axes) has its stick rotated 90°, so what you
   // feel as up/down arrives on axis 0; other controllers use axis 1.
   var SCROLL_SETTING = window.ankiClickerScrollAxis;
+  var AUTO = typeof SCROLL_SETTING !== "number";
+  // In "auto" mode the first stick (axes 0 and 1) scrolls whichever way it's
+  // pushed hardest, so it works however the controller is held: a sideways
+  // Joy-Con's stick is rotated 90 degrees compared with an Xbox pad's.
   function scrollAxisFor(pad) {
-    if (typeof SCROLL_SETTING === "number") return SCROLL_SETTING;
-    var sidewaysJoyCon = pad.axes.length === 2 && /057e/i.test(pad.id);
-    return sidewaysJoyCon ? 0 : 1;
+    if (!AUTO) return SCROLL_SETTING;
+    if (pad.axes.length < 2) return 0;
+    return Math.abs(pad.axes[0]) > Math.abs(pad.axes[1]) ? 0 : 1;
+  }
+  function isScrollAxis(pad, a) {
+    return AUTO ? a <= 1 : a === SCROLL_SETTING;
   }
   var SCROLL_INVERT = window.ankiClickerScrollInvert === true;
   var DEADZONE = 0.2;    // ignore tiny drift: sticks rarely rest at exactly 0
@@ -102,7 +109,7 @@
       state[i] = pad.buttons[i].pressed;
     }
     for (var a = 0; a < pad.axes.length; a++) {
-      if (a === scrollAxisFor(pad)) continue; // the scroll axis scrolls; it's not a button
+      if (isScrollAxis(pad, a)) continue; // the scroll stick scrolls; it's not a button
       state[100 + a * 2] = pad.axes[a] < -AXIS_THRESHOLD;
       state[101 + a * 2] = pad.axes[a] > AXIS_THRESHOLD;
     }
