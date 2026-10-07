@@ -443,13 +443,33 @@ def show_stats() -> None:
 
 # ---------------------------------------------------------------- 7. register everything with Anki
 
-gui_hooks.webview_will_set_content.append(on_webview_set_content)
-gui_hooks.webview_did_receive_js_message.append(on_js_message)
-gui_hooks.reviewer_did_show_question.append(on_show_question)
-gui_hooks.reviewer_did_show_answer.append(on_show_answer)
-gui_hooks.reviewer_did_answer_card.append(on_answer)
-gui_hooks.reviewer_will_end.append(start_sync)   # upload when they leave the review screen
-gui_hooks.profile_did_open.append(start_sync)    # and catch up on anything left from last time
+def _safe(fn, passthrough_first_arg=False):
+    """
+    Wrap a hook so a bug in THIS add-on can never interrupt someone's
+    reviews. Anki calls these during every card; if one raised an error,
+    Anki would show an error popup mid-review. Instead the error goes to
+    debug.log and the review carries on exactly as if the add-on weren't
+    installed. (The cost: a broken feature fails silently, so check
+    debug.log when something seems off.)
+    """
+    def wrapper(*args):
+        try:
+            return fn(*args)
+        except Exception as e:
+            debug(f"error in {fn.__name__}: {type(e).__name__}: {e}")
+            # The JS-message hook must hand back what it received, or other
+            # add-ons further down the chain would lose their messages.
+            return args[0] if passthrough_first_arg else None
+    return wrapper
+
+
+gui_hooks.webview_will_set_content.append(_safe(on_webview_set_content))
+gui_hooks.webview_did_receive_js_message.append(_safe(on_js_message, passthrough_first_arg=True))
+gui_hooks.reviewer_did_show_question.append(_safe(on_show_question))
+gui_hooks.reviewer_did_show_answer.append(_safe(on_show_answer))
+gui_hooks.reviewer_did_answer_card.append(_safe(on_answer))
+gui_hooks.reviewer_will_end.append(_safe(start_sync))   # upload when they leave the review screen
+gui_hooks.profile_did_open.append(_safe(start_sync))    # and catch up on anything left from last time
 
 _menu = QMenu("Anki Clicker", mw)
 for _label, _fn in (
