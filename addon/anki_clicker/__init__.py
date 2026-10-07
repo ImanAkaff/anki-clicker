@@ -72,6 +72,7 @@ SCROLL_STEP_PX = 250  # one d-pad press scrolls this far
 # reach people who installed an earlier version. Their own mappings still win.
 DEFAULT_BUTTONS = {
     "6": "show_answer",   # left shoulder: Joy-Con (L) shoulder, Xbox/PS left trigger
+    "9": "undo",          # Joy-Con (L) minus; Xbox Menu / PS Options
     "12": "scroll_up",    # d-pad up
     "13": "scroll_down",  # d-pad down
 }
