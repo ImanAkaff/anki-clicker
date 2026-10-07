@@ -108,6 +108,15 @@ def debug(msg: str) -> None:
 
 # ---------------------------------------------------------------- 1. load gamepad.js into the reviewer
 
+def _scroll_axis_js(value) -> str:
+    """Config value -> JavaScript: a number picks that axis, anything else
+    (normally "auto") lets gamepad.js choose per controller."""
+    try:
+        return str(int(value))
+    except (TypeError, ValueError):
+        return '"auto"'
+
+
 def on_webview_set_content(web_content, context) -> None:
     # Many screens in Anki are web views; only add our script to the reviewer.
     if isinstance(context, Reviewer):
@@ -116,7 +125,7 @@ def on_webview_set_content(web_content, context) -> None:
         # Settings gamepad.js reads when it starts: which stick axis scrolls.
         web_content.head += (
             "<script>"
-            f"window.ankiClickerScrollAxis = {int(cfg.get('scroll_axis', 1))};"
+            f"window.ankiClickerScrollAxis = {_scroll_axis_js(cfg.get('scroll_axis', 'auto'))};"
             f"window.ankiClickerScrollInvert = {'true' if cfg.get('scroll_invert') else 'false'};"
             "</script>"
         )

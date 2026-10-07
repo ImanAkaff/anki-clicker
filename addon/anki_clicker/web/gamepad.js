@@ -66,14 +66,23 @@
   // Smooth scrolling with the stick. Python sets which axis scrolls (from the
   // add-on config) before this script runs; axis 1 is the left stick's
   // up/down on most controllers. Set to -1 in the config to turn it off.
-  var SCROLL_AXIS = typeof window.ankiClickerScrollAxis === "number" ? window.ankiClickerScrollAxis : 1;
+  // "auto" (the default) picks per controller: a single Joy-Con held
+  // sideways (Nintendo, only 2 axes) has its stick rotated 90°, so what you
+  // feel as up/down arrives on axis 0; other controllers use axis 1.
+  var SCROLL_SETTING = window.ankiClickerScrollAxis;
+  function scrollAxisFor(pad) {
+    if (typeof SCROLL_SETTING === "number") return SCROLL_SETTING;
+    var sidewaysJoyCon = pad.axes.length === 2 && /057e/i.test(pad.id);
+    return sidewaysJoyCon ? 0 : 1;
+  }
   var SCROLL_INVERT = window.ankiClickerScrollInvert === true;
   var DEADZONE = 0.2;    // ignore tiny drift: sticks rarely rest at exactly 0
   var MAX_SPEED = 28;    // pixels per frame at full tilt (~1700 px/second)
 
   function scrollWith(pad) {
-    if (SCROLL_AXIS < 0 || SCROLL_AXIS >= pad.axes.length) return;
-    var v = pad.axes[SCROLL_AXIS];
+    var axis = scrollAxisFor(pad);
+    if (axis < 0 || axis >= pad.axes.length) return;
+    var v = pad.axes[axis];
     if (Math.abs(v) < DEADZONE) return;
     // Squaring the tilt gives fine control near the middle and speed at the
     // edge: a light push creeps, a full push flies.
@@ -93,7 +102,7 @@
       state[i] = pad.buttons[i].pressed;
     }
     for (var a = 0; a < pad.axes.length; a++) {
-      if (a === SCROLL_AXIS) continue; // the scroll axis scrolls; it's not a button
+      if (a === scrollAxisFor(pad)) continue; // the scroll axis scrolls; it's not a button
       state[100 + a * 2] = pad.axes[a] < -AXIS_THRESHOLD;
       state[101 + a * 2] = pad.axes[a] > AXIS_THRESHOLD;
     }
