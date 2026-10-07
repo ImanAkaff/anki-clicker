@@ -32,11 +32,12 @@ import time
 import uuid
 
 from aqt import gui_hooks, mw
-from aqt.qt import QAction, QMenu, qconnect
+from aqt.qt import QAction, QDialog, QMenu, QUrl, QVBoxLayout, qconnect
 from aqt.reviewer import Reviewer
-from aqt.utils import showInfo, tooltip
+from aqt.utils import getText, showInfo, tooltip
+from aqt.webview import AnkiWebView
 
-from . import storage, sync
+from . import analytics, storage, sync
 
 # ---------------------------------------------------------------- paths & setup
 
@@ -50,7 +51,7 @@ DB_PATH = os.path.join(DATA_DIR, "clicker.sqlite3")
 ADDON_PACKAGE = mw.addonManager.addonFromModule(__name__)
 
 # Allow Anki's web views to load files from our web/ folder.
-mw.addonManager.setWebExports(__name__, r"web/.*\.js")
+mw.addonManager.setWebExports(__name__, r"web/.*\.(js|css|html|svg|json)")
 
 SESSION_ID = uuid.uuid4().hex[:12]  # new ID each time Anki starts
 
@@ -214,7 +215,7 @@ def start_sync(manual: bool = False) -> None:
     cfg = config()
     if not (cfg.get("sync_enabled") and cfg.get("server_url") and cfg.get("token")):
         if manual:
-            showInfo("Sync is off. Set server_url and token in Tools > Add-ons > Config.")
+            showInfo("Not connected yet. Use Tools > Anki Clicker > Connect… and paste your code.")
         return
     if _sync_running:
         return  # one upload at a time
@@ -238,38 +239,151 @@ def start_sync(manual: bool = False) -> None:
         else:
             _last_sync_message = result.error or f"Uploaded {result.uploaded} reviews."
         if manual:
-            tooltip(_last_sync_message)
+            # period: milliseconds on screen. Long enough to notice after a
+            # sync that waited up to a minute for the server to wake up.
+            tooltip(_last_sync_message, period=8000)
 
     # Anki's built-in helper: run `task` on a worker thread, then `on_done`
     # on the main thread with the result.
     mw.taskman.run_in_background(task, on_done)
 
 
-# ---------------------------------------------------------------- 5. stats window (to be replaced by React)
+# ---------------------------------------------------------------- 5. connect dialog
+
+TOKEN_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+
+
+def connect_dialog() -> None:
+    """
+    Friends paste the code you sent them; we save it to the add-on config and
+    sync right away. This replaces hand-editing the JSON config, which is easy
+    to break (a missing quote or comma and Anki refuses to save).
+    """
+    code, ok = getText(
+        "Paste the code Azeem sent you:",
+        parent=mw,
+        title="Connect Anki Clicker",
+    )
+    if not ok:
+        return
+    code = code.strip().strip('"').strip("'").strip()  # forgive stray quotes/spaces
+    if "/" in code or "=" in code:
+        # The admin token is base64 (has / and =); user tokens never do.
+        showInfo("That looks like an admin token, not your personal code. "
+                 "Use the code Azeem sent you.")
+        return
+    if len(code) < 20 or not set(code) <= TOKEN_CHARS:
+        showInfo("That doesn't look like a valid code. Copy it again, without "
+                 "any extra text, and try once more.")
+        return
+    cfg = config()
+    cfg["token"] = code
+    cfg["sync_enabled"] = True
+    if not cfg.get("server_url"):
+        cfg["server_url"] = "https://anki-clicker-api.onrender.com"
+    # writeConfig saves to meta.json in the add-on folder (the same place the
+    # Config window saves to). It survives add-on updates.
+    mw.addonManager.writeConfig(__name__, cfg)
+    tooltip("Connected. Uploading your reviews… (can take up to a minute)", period=6000)
+    start_sync(manual=True)
+
+
+# ---------------------------------------------------------------- 6. stats window (React)
+
+class StatsDialog(QDialog):
+    """
+    A window holding an AnkiWebView: the same built-in browser Anki uses for
+    cards. It loads our React app (web/stats/index.html, built by Vite) from
+    Anki's local web server, then hands it the numbers as JSON.
+
+    Python computes everything (analytics.py); React only draws. That split
+    keeps the maths testable without a browser, and the page simple.
+    """
+
+    def __init__(self, payload: dict):
+        super().__init__(mw)
+        self.setWindowTitle("Anki Clicker: your study insights")
+        self.resize(1000, 780)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.web = AnkiWebView(parent=self)
+        layout.addWidget(self.web)
+        self._payload = json.dumps(payload)
+        # When the page has finished loading, push the data into it.
+        qconnect(self.web.loadFinished, self._on_loaded)
+        self.web.load_url(QUrl(f"{mw.serverURL()}_addons/{ADDON_PACKAGE}/web/stats/index.html"))
+
+    def _on_loaded(self, ok: bool) -> None:
+        if ok:
+            self.web.eval(f"window.ankiClickerSetData({self._payload});")
+
+
+def _card_preview(card_id: int) -> str | None:
+    """Front of the card as plain text, for the shaky-cards list. Shown only
+    on this computer; card text is never uploaded."""
+    try:
+        html = mw.col.get_card(card_id).question()
+    except Exception:
+        return None  # card was deleted since it was reviewed
+    return analytics.html_to_text(html)
+
+
+def _next_answers(rows: list[dict]) -> dict[int, int]:
+    """For each logged review, find the NEXT time Anki saw that card and what
+    button was pressed then (from Anki's revlog). This is how we test whether
+    a slow 'Good' today predicts an 'Again' next time."""
+    by_card: dict[int, list[tuple[int, int]]] = {}
+    card_ids = list({r["card_id"] for r in rows if r.get("revlog_id")})
+    for start in range(0, len(card_ids), 500):
+        chunk = card_ids[start:start + 500]
+        q = ",".join("?" * len(chunk))
+        for rid, cid, ease in mw.col.db.all(
+            f"SELECT id, cid, ease FROM revlog WHERE cid IN ({q}) AND ease > 0 ORDER BY id", *chunk
+        ):
+            by_card.setdefault(cid, []).append((rid, ease))
+    nxt = {}
+    for r in rows:
+        rid = r.get("revlog_id")
+        if not rid:
+            continue
+        for later_id, ease in by_card.get(r["card_id"], []):
+            if later_id > rid:
+                nxt[rid] = ease
+                break
+    return nxt
+
+
+_stats_window = None  # keep a reference, or Python garbage-collects the window
+
 
 def show_stats() -> None:
+    global _stats_window
     removed = remove_undone_reviews()
     if removed:
         tooltip(f"Removed {removed} undone review(s) from the log.")
-    s = storage.summary(_db)
-    if not s["total"]:
-        showInfo("No reviews logged yet.")
-        return
-    lines = [
-        f"Reviews: {s['total']} across {s['sessions']} session(s)",
-        f"Avg think time (question to reveal): {s['avg_think'] or 0:.1f}s",
-        f"Avg hesitation (reveal to button): {s['avg_hesitation'] or 0:.1f}s",
-        "",
-        "Hesitation by button:",
-        *[f"  {EASE_NAMES.get(e, e)}: {n} reviews, {(h or 0):.1f}s avg" for e, n, h in s["by_ease"]],
-        "",
-        f"Waiting to upload: {s['unsynced']}",
-        f"Last sync: {_last_sync_message}",
-    ]
-    showInfo("\n".join(lines), title="Anki Clicker")
+    rows = storage.all_reviews(_db)
+    try:
+        from aqt.theme import theme_manager
+        night = bool(theme_manager.night_mode)
+    except Exception:
+        night = False
+    payload = analytics.compute(
+        rows,
+        next_answers=_next_answers(rows),
+        card_preview=_card_preview,
+        deck_name=lambda did: (mw.col.decks.name_if_exists(did) or "Deleted deck"),
+    )
+    payload["meta"] = {
+        "night_mode": night,
+        "unsynced": storage.summary(_db)["unsynced"],
+        "last_sync": _last_sync_message,
+        "connected": bool(config().get("token")),
+    }
+    _stats_window = StatsDialog(payload)
+    _stats_window.show()
 
 
-# ---------------------------------------------------------------- 6. register everything with Anki
+# ---------------------------------------------------------------- 7. register everything with Anki
 
 gui_hooks.webview_will_set_content.append(on_webview_set_content)
 gui_hooks.webview_did_receive_js_message.append(on_js_message)
@@ -280,10 +394,12 @@ gui_hooks.reviewer_will_end.append(start_sync)   # upload when they leave the re
 gui_hooks.profile_did_open.append(start_sync)    # and catch up on anything left from last time
 
 _menu = QMenu("Anki Clicker", mw)
-_stats_action = QAction("Stats", mw)
-qconnect(_stats_action.triggered, show_stats)
-_sync_action = QAction("Sync now", mw)
-qconnect(_sync_action.triggered, lambda: start_sync(manual=True))
-_menu.addAction(_stats_action)
-_menu.addAction(_sync_action)
+for _label, _fn in (
+    ("Stats", show_stats),
+    ("Sync now", lambda: start_sync(manual=True)),
+    ("Connect…", connect_dialog),
+):
+    _action = QAction(_label, mw)
+    qconnect(_action.triggered, _fn)
+    _menu.addAction(_action)
 mw.form.menuTools.addMenu(_menu)

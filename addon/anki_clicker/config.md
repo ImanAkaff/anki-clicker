@@ -1,5 +1,7 @@
 **Anki Clicker settings**
 
+Easiest way to connect: **Tools → Anki Clicker → Connect…** and paste your code. You don't need to edit anything here.
+
 - `server_url`: the address Azeem gave you, e.g. `https://anki-clicker.example.com`. Leave empty to keep everything on this computer only.
 - `token`: your personal key from Azeem. Keep it private.
 - `sync_enabled`: `true` to upload your review timings, `false` to stop.

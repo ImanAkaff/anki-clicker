@@ -19,3 +19,6 @@ addon/anki_clicker/user_files/
 
 # Anki writes the user's add-on settings here, including their token
 addon/anki_clicker/meta.json
+
+# React stats screen: installed packages (recreate with npm install)
+stats-ui/node_modules/

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Anki Clicker insights</title>
+    <script>
+      // Python calls this after the page loads, passing all the numbers as JSON
+      // (see StatsDialog in __init__.py). It may arrive before or after React
+      // starts, so we store it and fire an event; React picks it up either way.
+      window.ankiClickerSetData = function (data) {
+        window.__ankiClickerData = data;
+        window.dispatchEvent(new Event("ankiclicker:data"));
+      };
+    </script>
+    <script type="module" crossorigin src="./assets/index-q3KOF0D3.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CasLMj8W.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

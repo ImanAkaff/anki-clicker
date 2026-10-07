@@ -117,6 +117,14 @@ def delete_undone(conn: sqlite3.Connection, revlog_ids: list[int]) -> int:
     return cur.rowcount
 
 
+def all_reviews(conn: sqlite3.Connection) -> list[dict]:
+    """Every logged review, oldest first, for the stats screen."""
+    return [dict(r) for r in conn.execute(
+        "SELECT card_id, deck_id, question_shown, answer_shown, answered, ease,"
+        " input_source, revlog_id FROM reviews ORDER BY question_shown"
+    )]
+
+
 def summary(conn: sqlite3.Connection) -> dict:
     total, sessions, think, hes, unsynced = conn.execute(
         "SELECT COUNT(*), COUNT(DISTINCT session_id),"
