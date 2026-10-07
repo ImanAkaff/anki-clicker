@@ -56,6 +56,12 @@ mw.addonManager.setWebExports(__name__, r"web/.*\.(js|css|html|svg|json)")
 SESSION_ID = uuid.uuid4().hex[:12]  # new ID each time Anki starts
 
 ACTIONS_TO_EASE = {"again": 1, "hard": 2, "good": 3, "easy": 4}
+SCROLL_STEP_PX = 250  # one d-pad press scrolls this far
+
+# Defaults that apply even if someone's saved config predates them. Anki keeps
+# a user's own button_map as-is, so new default buttons wouldn't otherwise
+# reach people who installed an earlier version. Their own mappings still win.
+DEFAULT_BUTTONS = {"12": "scroll_up", "13": "scroll_down"}  # d-pad up/down
 EASE_NAMES = {1: "Again", 2: "Hard", 3: "Good", 4: "Easy"}
 
 
@@ -92,6 +98,14 @@ def debug(msg: str) -> None:
 def on_webview_set_content(web_content, context) -> None:
     # Many screens in Anki are web views; only add our script to the reviewer.
     if isinstance(context, Reviewer):
+        cfg = config()
+        # Settings gamepad.js reads when it starts: which stick axis scrolls.
+        web_content.head += (
+            "<script>"
+            f"window.ankiClickerScrollAxis = {int(cfg.get('scroll_axis', 1))};"
+            f"window.ankiClickerScrollInvert = {'true' if cfg.get('scroll_invert') else 'false'};"
+            "</script>"
+        )
         web_content.js.append(f"/_addons/{ADDON_PACKAGE}/web/gamepad.js")
 
 
@@ -134,7 +148,7 @@ def handle_button(button_id: str) -> None:
     if mw.state != "review" or reviewer.card is None:
         return
 
-    action = config().get("button_map", {}).get(button_id)
+    action = {**DEFAULT_BUTTONS, **config().get("button_map", {})}.get(button_id)
     if action is None:
         # This doubles as the way to discover button numbers.
         tooltip(f"Button {button_id} isn't mapped. Add it in Tools > Add-ons > Config.")
@@ -142,6 +156,12 @@ def handle_button(button_id: str) -> None:
 
     if action == "undo":
         mw.undo()
+        return
+
+    if action in ("scroll_up", "scroll_down"):
+        # Works on both sides of the card (question and answer).
+        dy = SCROLL_STEP_PX if action == "scroll_down" else -SCROLL_STEP_PX
+        reviewer.web.eval(f"window.scrollBy({{top: {dy}, behavior: 'smooth'}});")
         return
 
     if reviewer.state == "question":

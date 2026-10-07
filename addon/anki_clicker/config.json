@@ -2,12 +2,16 @@
     "server_url": "https://anki-clicker-api.onrender.com",
     "token": "",
     "sync_enabled": true,
+    "scroll_axis": 1,
+    "scroll_invert": false,
     "button_map": {
         "0": "good",
         "1": "again",
         "2": "hard",
         "3": "easy",
         "5": "show_answer",
-        "8": "undo"
+        "8": "undo",
+        "12": "scroll_up",
+        "13": "scroll_down"
     }
 }
