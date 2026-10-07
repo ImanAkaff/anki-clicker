@@ -70,7 +70,11 @@ SCROLL_STEP_PX = 250  # one d-pad press scrolls this far
 # Defaults that apply even if someone's saved config predates them. Anki keeps
 # a user's own button_map as-is, so new default buttons wouldn't otherwise
 # reach people who installed an earlier version. Their own mappings still win.
-DEFAULT_BUTTONS = {"12": "scroll_up", "13": "scroll_down"}  # d-pad up/down
+DEFAULT_BUTTONS = {
+    "6": "show_answer",   # left shoulder: Joy-Con (L) shoulder, Xbox/PS left trigger
+    "12": "scroll_up",    # d-pad up
+    "13": "scroll_down",  # d-pad down
+}
 EASE_NAMES = {1: "Again", 2: "Hard", 3: "Good", 4: "Easy"}
 
 
