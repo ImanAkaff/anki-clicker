@@ -340,6 +340,11 @@ class StatsDialog(QDialog):
         qconnect(self.web.loadFinished, self._on_loaded)
         url = f"{mw.serverURL()}_addons/{ADDON_PACKAGE}/web/stats/index.html"
         debug(f"opening stats window: {url} (payload {len(self._payload)} chars)")
+        # By default Anki treats any page that isn't one of its own as an
+        # external link: it refuses to load it in the window (loadFinished
+        # reports ok=False) and opens it in the system browser instead.
+        # This tells the window to load our page itself.
+        self.web.set_open_links_externally(False)
         self.web.load_url(QUrl(url))
 
     def _on_loaded(self, ok: bool) -> None:
