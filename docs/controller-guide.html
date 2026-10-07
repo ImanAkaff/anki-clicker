@@ -1,0 +1,157 @@
+<title>Anki Clicker Controls</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;700&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one reference card — the controller drawn large, then a table for every controller type. */
+:root {
+  --bg: #f3f4f1;
+  --surface: #ffffff;
+  --ink: #16191d;
+  --ink-2: #545a61;
+  --line: #d9dcd6;
+  --shell: #e7e9e4;      /* controller body */
+  --shell-edge: #b9beb6;
+  --key: #2b3036;        /* buttons */
+  --key-ink: #ffffff;
+  --accent: #0f7a6c;     /* grading buttons */
+  --accent-soft: #d6efe9;
+  --warm: #b4532a;       /* undo */
+  --display: "Familjen Grotesk", "Segoe UI", system-ui, sans-serif;
+  --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121416; --surface: #1b1e21; --ink: #eef0ec; --ink-2: #a9afb3; --line: #2e3337;
+    --shell: #2a2e33; --shell-edge: #464c52; --key: #0f1113; --key-ink: #eef0ec;
+    --accent: #3fb9a6; --accent-soft: #163a35; --warm: #e2875f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121416; --surface: #1b1e21; --ink: #eef0ec; --ink-2: #a9afb3; --line: #2e3337;
+  --shell: #2a2e33; --shell-edge: #464c52; --key: #0f1113; --key-ink: #eef0ec;
+  --accent: #3fb9a6; --accent-soft: #163a35; --warm: #e2875f; color-scheme: dark;
+}
+
+body { background: var(--bg); color: var(--ink); font: 16px/1.55 var(--body); padding-inline: 16px; padding-block: 28px 48px; }
+.wrap { max-width: 880px; margin: 0 auto; display: grid; gap: 22px; }
+.wrap > * { min-width: 0; }  /* let the wide diagram and table scroll inside their own boxes on phones */
+h1 { font: 700 clamp(28px, 5vw, 40px)/1.1 var(--display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font: 700 20px/1.2 var(--display); margin: 0 0 12px; }
+.lede { color: var(--ink-2); margin: 6px 0 0; max-width: 62ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+
+.diagram { overflow-x: auto; }
+.diagram svg { display: block; width: 100%; min-width: 520px; height: auto; }
+.body { fill: var(--shell); stroke: var(--shell-edge); stroke-width: 2; }
+.key { fill: var(--key); }
+.key.grade { fill: var(--accent); }
+.key.undo { fill: var(--warm); }
+.keytext { fill: var(--key-ink); font: 700 14px var(--body); text-anchor: middle; dominant-baseline: central; }
+.label { fill: var(--ink); font: 700 15px var(--body); text-anchor: middle; }
+.sub { fill: var(--ink-2); font: 500 12px var(--mono); text-anchor: middle; }
+.lead { stroke: var(--ink-2); stroke-width: 1.2; stroke-dasharray: 3 3; fill: none; }
+.stickring { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 5; }
+.caption { color: var(--ink-2); font-size: 14px; margin: 10px 0 0; }
+
+.tips { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.tip { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--surface); }
+.tip b { display: block; font-family: var(--display); font-size: 16px; margin-bottom: 4px; }
+.tip p { margin: 0; color: var(--ink-2); font-size: 15px; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; min-width: 560px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 700 12px var(--body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+td.num { font-family: var(--mono); font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-weight: 700; font-size: 14px; }
+.pill.grade { background: var(--accent-soft); color: var(--ink); }
+.pill.plain { background: var(--shell); color: var(--ink); }
+.pill.undo { background: transparent; border: 1.5px solid var(--warm); color: var(--ink); }
+.foot { color: var(--ink-2); font-size: 14px; }
+code { font-family: var(--mono); font-size: 0.9em; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Anki Clicker controls</h1>
+    <p class="lede">What each button does during a review. Hold the Joy-Con (L) sideways, with the stick on your left.</p>
+  </header>
+
+  <section class="panel">
+    <div class="diagram">
+      <svg viewBox="0 0 760 400" role="img" aria-labelledby="dtitle">
+        <title id="dtitle">Joy-Con (L) held sideways: shoulder shows the answer, stick scrolls, minus undoes, four buttons grade Easy, Again, Good and Hard.</title>
+
+        <!-- labels above the shoulder rail -->
+        <text class="label" x="380" y="34">Shoulder: Show answer</text>
+        <text class="sub" x="380" y="52">button 6</text>
+        <path class="lead" d="M380 60 V96"/>
+
+        <!-- controller body (generic schematic) -->
+        <rect class="body" x="70" y="98" width="620" height="230" rx="115"/>
+        <!-- shoulder rail -->
+        <rect class="key" x="250" y="88" width="260" height="14" rx="7"/>
+
+        <!-- minus -->
+        <rect class="key undo" x="128" y="150" width="34" height="12" rx="6"/>
+        <path class="lead" d="M145 150 V128 H112 V74"/>
+        <text class="label" x="112" y="52">Minus: Undo</text>
+        <text class="sub" x="112" y="68">button 8</text>
+
+        <!-- stick -->
+        <circle cx="250" cy="213" r="62" class="stickring"/>
+        <circle cx="250" cy="213" r="40" class="key"/>
+        <text class="keytext" x="250" y="213">Scroll</text>
+        <path class="lead" d="M250 275 V352"/>
+        <text class="label" x="250" y="372">Stick: scroll long cards</text>
+        <text class="sub" x="250" y="390">push any direction</text>
+
+        <!-- grading buttons (as seen held sideways) -->
+        <circle cx="530" cy="151" r="28" class="key grade"/>
+        <text class="keytext" x="530" y="151">Easy</text>
+        <circle cx="592" cy="213" r="28" class="key grade"/>
+        <text class="keytext" x="592" y="213">Again</text>
+        <circle cx="530" cy="275" r="28" class="key grade"/>
+        <text class="keytext" x="530" y="275">Good</text>
+        <circle cx="468" cy="213" r="28" class="key grade"/>
+        <text class="keytext" x="468" y="213">Hard</text>
+
+        <path class="lead" d="M530 303 V352"/>
+        <text class="label" x="560" y="372">Four buttons: grade the card</text>
+        <text class="sub" x="560" y="390">Good 0 · Again 1 · Hard 2 · Easy 3</text>
+      </svg>
+    </div>
+    <p class="caption">Button positions follow how Anki reads a sideways Joy-Con. If a label doesn't match what a button does, tell Azeem which one.</p>
+  </section>
+
+  <section class="tips" aria-label="How it behaves">
+    <div class="tip"><b>Can't grade by accident</b><p>On the question side, any grading button just shows the answer. It grades only after you've seen it.</p></div>
+    <div class="tip"><b>Undo works like Ctrl+Z</b><p>Minus takes back your last answer. The stats skip anything you undo.</p></div>
+    <div class="tip"><b>Scrolling needs a long card</b><p>A light push creeps, a full push moves fast. On short cards the stick does nothing, which is normal.</p></div>
+  </section>
+
+  <section class="panel">
+    <h2>Other controllers</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Action</th><th>Joy-Con (L), sideways</th><th>Xbox</th><th>PlayStation</th><th>Button #</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="pill plain">Show answer</span></td><td>Shoulder</td><td>RB or LT</td><td>R1 or L2</td><td class="num">5, 6</td></tr>
+          <tr><td><span class="pill grade">Good</span></td><td>Bottom button</td><td>A</td><td>✕</td><td class="num">0</td></tr>
+          <tr><td><span class="pill grade">Again</span></td><td>Right button</td><td>B</td><td>○</td><td class="num">1</td></tr>
+          <tr><td><span class="pill grade">Hard</span></td><td>Left button</td><td>X</td><td>□</td><td class="num">2</td></tr>
+          <tr><td><span class="pill grade">Easy</span></td><td>Top button</td><td>Y</td><td>△</td><td class="num">3</td></tr>
+          <tr><td><span class="pill undo">Undo</span></td><td>Minus (−)</td><td>View</td><td>Create</td><td class="num">8</td></tr>
+          <tr><td><span class="pill plain">Scroll</span></td><td>Stick, any way</td><td>Left stick or D-pad ↑↓</td><td>Left stick or D-pad ↑↓</td><td class="num">stick, 12, 13</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <p class="foot">To change a button: Tools → Add-ons → Anki Clicker → Config, then edit <code>button_map</code> as <code>"number": "action"</code>. Actions: show_answer, again, hard, good, easy, undo, scroll_up, scroll_down.</p>
+</div>
