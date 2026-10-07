@@ -1,5 +1,5 @@
 {
-    "server_url": "",
+    "server_url": "https://anki-clicker-api.onrender.com",
     "token": "",
     "sync_enabled": true,
     "button_map": {
