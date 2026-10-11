@@ -44,8 +44,24 @@ jobs:
       - name: Add-on code compiles
         run: python -m py_compile addon/anki_clicker/*.py
 
+  addon:
+    # Load and exercise the add-on on the oldest and newest Python that Anki
+    # ships. Anki 25.02 uses Python 3.9 and 25.09 uses 3.13; v1.0.2 broke on
+    # 3.9 because nothing tested it. Now nothing ships unless both pass.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Add-on smoke test on Python ${{ matrix.python }}
+        run: python addon/tests/smoke_test.py
+
   release:
-    needs: test     # only runs if every test passed
+    needs: [test, addon]   # only runs if every test passed on every Python
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

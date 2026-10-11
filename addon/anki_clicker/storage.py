@@ -10,6 +10,10 @@ server happens later, in the background. This "local-first" design means:
 This file doesn't import anything from Anki, so it can be tested outside Anki.
 """
 
+# Lets type hints like `float | None` work on Python 3.9, which older Anki
+# versions (e.g. 25.02) still ship. Without it the add-on fails to load there.
+from __future__ import annotations
+
 import sqlite3
 import uuid
 

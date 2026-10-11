@@ -14,6 +14,10 @@ Two timing measures are used throughout:
     hesitation = answered - answer_shown         (deciding which button to press)
 """
 
+# Lets type hints like `float | None` work on Python 3.9, which older Anki
+# versions (e.g. 25.02) still ship. Without it the add-on fails to load there.
+from __future__ import annotations
+
 import html as _html
 import re
 import time
