@@ -317,7 +317,16 @@ def start_sync(manual: bool = False) -> None:
         except Exception as e:  # a bug in sync.py shouldn't crash Anki
             _last_sync_message = f"Sync crashed: {e}"
         else:
-            _last_sync_message = result.error or f"Uploaded {result.uploaded} reviews."
+            if result.error:
+                _last_sync_message = result.error
+            elif result.uploaded:
+                _last_sync_message = f"Uploaded {result.uploaded} review(s)."
+            else:
+                # Nothing was waiting. Usually because the add-on already synced
+                # on its own when the review screen closed, so say so plainly.
+                total = storage.summary(_db)["total"]
+                _last_sync_message = (f"All {total} review(s) on this computer are already uploaded."
+                                      if total else "No reviews logged on this computer yet.")
         if manual:
             # period: milliseconds on screen. Long enough to notice after a
             # sync that waited up to a minute for the server to wake up.
