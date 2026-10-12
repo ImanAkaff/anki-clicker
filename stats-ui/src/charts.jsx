@@ -158,3 +158,67 @@ export function BarChart({ items, labelKey, valueKey, unit, highlightKey, toolti
     </div>
   );
 }
+
+// Day-by-day chart: one slot per calendar day, x is just the day's position.
+// Days with no reviews have no value; the line breaks there instead of
+// drawing a misleading straight line across the gap.
+export function DayChart({ points, yKey, unit, tooltip }) {
+  const { W, H } = size(true);
+  const [tip, setTip] = useState(null);
+  const box = useRef(null);
+  const vals = points.map((p) => p[yKey]).filter((v) => v != null);
+  const yTicks = niceTicks(0, Math.max(...vals, unit === "%" ? 10 : 1), 3);
+  const yMax = yTicks[yTicks.length - 1];
+  const n = points.length;
+  const x = (i) => M.left + (n === 1 ? 0.5 : i / (n - 1)) * (W - M.left - M.right);
+  const y = (v) => M.top + (1 - v / yMax) * (H - M.top - M.bottom);
+
+  // Build the line in pieces, starting a new piece after each empty day.
+  let d = "", pen = false;
+  points.forEach((p, i) => {
+    const v = p[yKey];
+    if (v == null) { pen = false; return; }
+    d += `${pen ? "L" : "M"}${x(i)},${y(v)} `;
+    pen = true;
+  });
+  // About 7 date labels, whatever the range, so they never overlap.
+  const every = Math.max(1, Math.ceil(n / 7));
+
+  function onMove(e) {
+    const r = box.current.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * W;
+    const i = Math.max(0, Math.min(n - 1, Math.round(((px - M.left) / (W - M.left - M.right)) * (n - 1))));
+    const p = points[i];
+    const v = p[yKey];
+    setTip({
+      x: (x(i) / W) * r.width,
+      y: ((v == null ? y(0) : y(v)) / H) * r.height,
+      content: tooltip(p),
+      px: x(i),
+    });
+  }
+
+  return (
+    <div className="chart" ref={box} onMouseMove={onMove} onMouseLeave={() => setTip(null)}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img">
+        {yTicks.map((t) => (
+          <g key={t}>
+            <line className="gridline" x1={M.left} x2={W - M.right} y1={y(t)} y2={y(t)} />
+            <text x={M.left - 6} y={y(t) + 4} textAnchor="end">{t}{unit}</text>
+          </g>
+        ))}
+        {tip && <line x1={tip.px} x2={tip.px} y1={M.top} y2={H - M.bottom} stroke="var(--text-3)" strokeWidth="1" />}
+        <path d={d} fill="none" stroke="var(--series)" strokeWidth="2" strokeLinejoin="round" />
+        {points.map((p, i) => p[yKey] != null && (
+          <circle key={p.date} cx={x(i)} cy={y(p[yKey])} r={n > 40 ? 2.5 : 4}
+                  fill="var(--series)" stroke="var(--surface)" strokeWidth="2" />
+        ))}
+        {points.map((p, i) => (n - 1 - i) % every === 0 && (
+          <text key={p.date} x={x(i)} y={H - M.bottom + 16}
+                textAnchor={i === n - 1 ? "end" : i === 0 ? "start" : "middle"}>{p.label}</text>
+        ))}
+      </svg>
+      <Tooltip tip={tip} />
+    </div>
+  );
+}

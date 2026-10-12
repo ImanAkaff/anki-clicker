@@ -58,9 +58,22 @@ UPLOAD_FIELDS = (
 )
 
 
-def connect(path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
+def connect(path: str, timeout: float = 2.0) -> sqlite3.Connection:
+    # timeout: how long to wait if the other thread (the background sync) is
+    # writing at the same moment. Python's default is 5 seconds, and on the
+    # main thread that's 5 seconds of frozen Anki. 2 seconds is plenty for
+    # our tiny writes; if it's ever exceeded, the hook's error is caught and
+    # logged, and Anki carries on.
+    conn = sqlite3.connect(path, timeout=timeout)
     conn.row_factory = sqlite3.Row  # rows behave like dicts: row["ease"]
+    try:
+        # WAL ("write-ahead log") mode: reading and writing no longer block
+        # each other, so the stats window or the sync reading the log never
+        # makes a review wait. It adds two small helper files next to the
+        # database (-wal, -shm), which SQLite cleans up on its own.
+        conn.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.DatabaseError:
+        pass  # some network drives don't support WAL; the default still works
     _migrate(conn)
     return conn
 

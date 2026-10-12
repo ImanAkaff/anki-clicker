@@ -94,19 +94,24 @@ def config() -> dict:
 _db = storage.connect(DB_PATH)
 
 # Diagnostic log: each step of opening the stats window is written here,
-# so problems can be traced without guessing. Kept small: newest 200 lines.
+# so problems can be traced without guessing.
 DEBUG_LOG = os.path.join(DATA_DIR, "debug.log")
+DEBUG_LOG_MAX_BYTES = 100_000
 
 
 def debug(msg: str) -> None:
+    # Appends one line, which is fast. (Earlier versions re-read and rewrote
+    # the whole file on every controller press; on slower computers, with
+    # antivirus scanning each write, that could stall Anki.) Only when the
+    # file passes ~100 KB is it trimmed back to the newest 200 lines.
     try:
-        lines = []
-        if os.path.exists(DEBUG_LOG):
+        with open(DEBUG_LOG, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%H:%M:%S ") + msg.replace("\n", " ")[:500] + "\n")
+        if os.path.getsize(DEBUG_LOG) > DEBUG_LOG_MAX_BYTES:
             with open(DEBUG_LOG, encoding="utf-8") as f:
-                lines = f.readlines()[-199:]
-        lines.append(time.strftime("%H:%M:%S ") + msg.replace("\n", " ")[:500] + "\n")
-        with open(DEBUG_LOG, "w", encoding="utf-8") as f:
-            f.writelines(lines)
+                lines = f.readlines()[-200:]
+            with open(DEBUG_LOG, "w", encoding="utf-8") as f:
+                f.writelines(lines)
     except Exception:
         pass  # logging must never break the add-on
 
@@ -151,6 +156,12 @@ def on_js_message(handled, message: str, context):
         # converts to JSON and hands to the page's callback.
         debug(f"page asked for data; have payload: {_stats_payload is not None}")
         return (True, _stats_payload)
+    if message.startswith("ankiclicker:stats:"):
+        # The page asking again with a deck or date range picked, e.g.
+        # ankiclicker:stats:{"deck": "Bio", "range": "7d"}
+        f = json.loads(message[len("ankiclicker:stats:"):])
+        debug(f"page asked for filtered data: {f}")
+        return (True, _stats_for(f.get("deck"), f.get("range", "all")))
     if message.startswith("ankiclicker:log:"):
         debug("page: " + message[len("ankiclicker:log:"):])
         return (True, None)
@@ -247,7 +258,10 @@ def on_answer(reviewer, card, ease: int) -> None:
         _db,
         session_id=SESSION_ID,
         card_id=card.id,
-        deck_id=card.did,
+        # A card in a filtered deck (custom study) keeps its real deck in
+        # `odid` ("original deck id"). Log that, so cramming doesn't create a
+        # throwaway "Filtered Deck 1" in the per-deck stats.
+        deck_id=getattr(card, "odid", 0) or card.did,
         question_shown=_current["question_shown"],
         answer_shown=_current["answer_shown"],
         answered=time.time(),
@@ -452,32 +466,80 @@ def _next_answers(rows: list[dict]) -> dict[int, int]:
 
 _stats_window = None  # keep a reference, or Python garbage-collects the window
 _stats_payload = None  # the numbers the open stats page asks for
+_stats_inputs = None   # rows + lookups, gathered once per window, reused per filter
+
+
+def _home_decks(rows: list[dict]) -> None:
+    """
+    Reviews logged before v1.0.4 may carry a filtered deck's ID (custom
+    study), and filtered decks are often deleted afterwards. For those rows
+    only, use the card's real deck instead: Anki keeps it in cards.odid while
+    the card sits in a filtered deck, and in cards.did once it's back.
+    """
+    def is_filtered_or_gone(did):
+        try:
+            d = mw.col.decks.get(did, default=False)
+        except Exception:
+            return False
+        return not d or bool(d.get("dyn"))
+
+    bad = {r["deck_id"] for r in rows if r.get("deck_id")}
+    bad = {did for did in bad if is_filtered_or_gone(did)}
+    if not bad:
+        return
+    card_ids = list({r["card_id"] for r in rows if r.get("deck_id") in bad})
+    home = {}
+    for start in range(0, len(card_ids), 500):
+        chunk = card_ids[start:start + 500]
+        q = ",".join("?" * len(chunk))
+        for cid, odid, did in mw.col.db.all(f"SELECT id, odid, did FROM cards WHERE id IN ({q})", *chunk):
+            home[cid] = odid or did
+    for r in rows:
+        if r.get("deck_id") in bad and r["card_id"] in home:
+            r["deck_id"] = home[r["card_id"]]
+
+
+def _stats_for(deck: str | None, range_key: str) -> dict:
+    """Recompute the insights for one deck / date range. The slow part
+    (reading the logs and Anki's revlog) was done once when the window
+    opened; this only re-filters and re-counts, which takes milliseconds."""
+    rows, next_answers, meta = _stats_inputs
+    payload = analytics.compute(
+        rows,
+        next_answers=next_answers,
+        card_preview=_card_preview,
+        deck_name=lambda did: (mw.col.decks.name_if_exists(did) or "Deleted deck"),
+        deck=deck or None,
+        range_key=range_key,
+    )
+    payload["meta"] = meta
+    return payload
 
 
 def show_stats() -> None:
-    global _stats_window, _stats_payload
+    global _stats_window, _stats_payload, _stats_inputs
     debug("--- Stats clicked")
     removed = remove_undone_reviews()
     if removed:
         tooltip(f"Removed {removed} undone review(s) from the log.")
     rows = storage.all_reviews(_db)
     try:
+        _home_decks(rows)
+    except Exception as e:  # nice-to-have; never block the window over it
+        debug(f"home deck lookup failed: {e}")
+    try:
         from aqt.theme import theme_manager
         night = bool(theme_manager.night_mode)
     except Exception:
         night = False
-    payload = analytics.compute(
-        rows,
-        next_answers=_next_answers(rows),
-        card_preview=_card_preview,
-        deck_name=lambda did: (mw.col.decks.name_if_exists(did) or "Deleted deck"),
-    )
-    payload["meta"] = {
+    meta = {
         "night_mode": night,
         "unsynced": storage.summary(_db)["unsynced"],
         "last_sync": _last_sync_message,
         "connected": bool(config().get("token")),
     }
+    _stats_inputs = (rows, _next_answers(rows), meta)
+    payload = _stats_for(None, "all")   # opens on all decks, all time
     _stats_payload = payload
     _stats_window = StatsDialog(payload)
     _stats_window.show()
@@ -588,7 +650,7 @@ gui_hooks.profile_did_open.append(_safe(check_for_updates))  # once per Anki sta
 
 _menu = QMenu("Anki Clicker", mw)
 for _label, _fn in (
-    ("Stats", show_stats),
+    ("My study insights", show_stats),
     ("Sync now", lambda: start_sync(manual=True)),
     ("Connect…", connect_dialog),
     (f"Check for updates (v{VERSION})", lambda: check_for_updates(manual=True)),

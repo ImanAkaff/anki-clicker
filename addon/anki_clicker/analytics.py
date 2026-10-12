@@ -248,14 +248,137 @@ def _time_of_day(rows, min_per_block=30):
     return {"blocks": blocks, "best": best, "min_per_block": min_per_block}
 
 
-def compute(rows, next_answers=None, card_preview=None, deck_name=None) -> dict:
-    clean = _clean(rows)
+# ---------------------------------------------------------------- filters: deck and date range
+#
+# Every review row carries its deck and its timestamps, so "one deck" or
+# "this week" is just a filter applied before the insights are computed.
+# The insights themselves don't change; they just see fewer rows.
+
+RANGES = {"today": 1, "7d": 7, "30d": 30, "all": None}   # days, counting today
+
+
+def _day_start(ts: float) -> float:
+    """Local midnight at the start of the day containing ts."""
+    t = time.localtime(ts)
+    return time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, 0, 0, -1))
+
+
+def range_start(range_key: str, now: float) -> float | None:
+    """'7d' -> local midnight 6 days ago (today plus the 6 days before it).
+    Calendar days, not 'the last 168 hours', so 'today' means since midnight."""
+    days = RANGES.get(range_key)
+    if days is None:
+        return None
+    start = _day_start(now)
+    for _ in range(days - 1):
+        start = _day_start(start - 12 * 3600)   # step back one calendar day (DST-safe)
+    return start
+
+
+def in_deck(name: str | None, selected: str | None) -> bool:
+    """Picking a deck includes its subdecks: 'Bio' matches 'Bio::Cells'.
+    Anki separates deck levels with '::'."""
+    if not selected:
+        return True
+    return name == selected or (name or "").startswith(selected + "::")
+
+
+def deck_options(rows: list[dict]) -> list[dict]:
+    """Every deck with reviews, plus its parent decks, for the deck picker.
+    A parent's count includes its subdecks, since picking it includes them."""
+    counts: dict[str, int] = {}
+    for r in rows:
+        parts = (r.get("deck") or "Unknown deck").split("::")
+        for i in range(1, len(parts) + 1):
+            name = "::".join(parts[:i])
+            counts[name] = counts.get(name, 0) + 1
+    return [{"name": n, "reviews": c} for n, c in sorted(counts.items(), key=lambda kv: kv[0].lower())]
+
+
+def _daily(rows: list[dict], start: float | None, now: float) -> list[dict]:
+    """One point per calendar day from the start of the range (or the first
+    review) to today. Days with no reviews are kept, with empty values, so
+    the chart shows the gap instead of joining Monday straight to Friday."""
+    if not rows and start is None:
+        return []
+    first = start if start is not None else _day_start(rows[0]["question_shown"])
+    by_day: dict[str, list[dict]] = {}
+    for r in rows:
+        by_day.setdefault(time.strftime("%Y-%m-%d", time.localtime(r["question_shown"])), []).append(r)
+    out, day = [], _day_start(first)
+    while day <= now:
+        key = time.strftime("%Y-%m-%d", time.localtime(day))
+        sel = by_day.get(key, [])
+        out.append({
+            "date": key,
+            "label": time.strftime("%b %d", time.localtime(day)).replace(" 0", " "),
+            "reviews": len(sel),
+            "median_hesitation_s": round(median(r["hes"] for r in sel), 2) if sel else None,
+            "median_think_s": round(median(r["think"] for r in sel), 2) if sel else None,
+            "again_rate_pct": _pct(sum(r["ease"] == 1 for r in sel), len(sel)),
+        })
+        day = _day_start(day + 36 * 3600)   # next calendar day (DST-safe)
+    return out
+
+
+def _deck_table(rows: list[dict], min_reviews=10) -> list[dict]:
+    """Each deck's numbers side by side, hardest first (highest Again rate).
+    Decks with only a few reviews go to the bottom: 1 Again out of 2 cards
+    is a 50% Again rate, but it says almost nothing."""
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        groups.setdefault(r.get("deck") or "Unknown deck", []).append(r)
+    table = [{
+        "deck": name,
+        "reviews": len(sel),
+        "median_hesitation_s": round(median(r["hes"] for r in sel), 2),
+        "again_rate_pct": _pct(sum(r["ease"] == 1 for r in sel), len(sel)),
+        "enough": len(sel) >= min_reviews,
+    } for name, sel in groups.items()]
+    table.sort(key=lambda d: (not d["enough"], -(d["again_rate_pct"] or 0), -d["reviews"]))
+    return table
+
+
+def compute(rows, next_answers=None, card_preview=None, deck_name=None,
+            deck: str | None = None, range_key: str = "all", now: float | None = None) -> dict:
+    """
+    rows:  every logged review, oldest first.
+    deck:  a deck name to focus on (includes its subdecks), or None for all.
+    range_key: 'today', '7d', '30d' or 'all'.
+
+    Everything is computed from the filtered rows EXCEPT the fatigue curve,
+    which always uses all decks and all time: it measures how you slow down
+    over a sitting, and sittings often mix decks, so splitting it would mostly
+    cut sessions in half and leave too few long ones to measure.
+    """
+    now = now or time.time()
+    if range_key not in RANGES:
+        range_key = "all"
+    names: dict = {}
+    def name_of(did):
+        if did not in names:
+            names[did] = (deck_name(did) if deck_name and did else None) or "Unknown deck"
+        return names[did]
+
+    everything = [{**r, "deck": name_of(r.get("deck_id"))} for r in _clean(rows)]
+    start = range_start(range_key, now)
+    clean = [r for r in everything
+             if (start is None or r["question_shown"] >= start) and in_deck(r["deck"], deck)]
     sessions = _sessions(clean)
     return {
-        "generated_at": time.time(),
+        "generated_at": now,
+        "filters": {
+            "deck": deck, "range": range_key,
+            "decks": deck_options(everything),
+            "total_reviews": len(everything),
+        },
         "overview": _overview(clean, sessions),
         "by_button": _by_button(clean),
-        "fatigue": _fatigue(sessions),
+        "daily": _daily(clean, start, now),
+        # The deck table follows the date range. With a deck picked, it lists
+        # that deck and its subdecks, so you can see which part is hardest.
+        "decks": _deck_table(clean),
+        "fatigue": _fatigue(_sessions(everything)),
         "shaky": _shaky_cards(clean, card_preview, deck_name),
         "predicts": _hesitation_predicts(clean, next_answers or {}),
         "time_of_day": _time_of_day(clean),

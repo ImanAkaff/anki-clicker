@@ -1,17 +1,128 @@
 // The stats screen. It receives one JSON object from Python (analytics.py)
 // and only draws it: no maths happens here beyond formatting.
 import React, { useEffect, useState } from "react";
-import { BarChart, LineChart } from "./charts.jsx";
+import { BarChart, DayChart, LineChart } from "./charts.jsx";
 
 function useAnkiData() {
   const [data, setData] = useState(window.__ankiClickerData || null);
+  const [busy, setBusy] = useState(false);
   const [, force] = useState(0);
   useEffect(() => {
     const on = () => { setData(window.__ankiClickerData || null); force((n) => n + 1); };
     window.addEventListener("ankiclicker:data", on);
     return () => window.removeEventListener("ankiclicker:data", on);
   }, []);
-  return data;
+  // Picking a deck or date range asks Python to recompute for that slice.
+  // Python does the maths (analytics.py); the page only draws the answer.
+  const request = (filters) => {
+    if (typeof window.pycmd !== "function") return;
+    setBusy(true);
+    window.pycmd("ankiclicker:stats:" + JSON.stringify(filters), (d) => {
+      setBusy(false);
+      if (d) setData(d);
+    });
+  };
+  return { data, busy, request };
+}
+
+const RANGE_LABELS = [["today", "Today"], ["7d", "7 days"], ["30d", "30 days"], ["all", "All time"]];
+const rangeText = { today: "today", "7d": "in the last 7 days", "30d": "in the last 30 days", all: "" };
+
+// The bar above everything: which deck, and which stretch of time.
+function Filters({ f, busy, onChange }) {
+  return (
+    <div className="filters">
+      <select value={f.deck || ""} onChange={(e) => onChange({ deck: e.target.value || null, range: f.range })}>
+        <option value="">All decks</option>
+        {/* Full names (MCAT::Chem), so the closed picker always says which deck */}
+        {f.decks.map((d) => (
+          <option key={d.name} value={d.name}>{d.name} ({d.reviews})</option>
+        ))}
+      </select>
+      <div className="seg" role="group" aria-label="Date range">
+        {RANGE_LABELS.map(([key, label]) => (
+          <button key={key} className={f.range === key ? "on" : ""} aria-pressed={f.range === key}
+                  onClick={() => onChange({ deck: f.deck, range: key })}>{label}</button>
+        ))}
+      </div>
+      {busy && <span className="muted small">Updating…</span>}
+    </div>
+  );
+}
+
+const DAY_METRICS = [
+  ["median_hesitation_s", "Hesitation", "s"],
+  ["again_rate_pct", "Again rate", "%"],
+  ["reviews", "Reviews", ""],
+];
+
+function Daily({ points }) {
+  const [metric, setMetric] = useState(DAY_METRICS[0][0]);
+  const studied = points.filter((p) => p.reviews);
+  if (points.length < 2) {
+    return <p className="waiting">Pick 7 days or longer to see a day-by-day trend.</p>;
+  }
+  if (studied.length < 2) {
+    return <p className="waiting">Study on at least two different days in this range to see a trend.</p>;
+  }
+  const [, label, unit] = DAY_METRICS.find((m) => m[0] === metric);
+  // Compare the first and last few study days to describe the direction.
+  const k = Math.max(1, Math.floor(studied.length / 3));
+  const avg = (arr) => arr.reduce((a, p) => a + (p[metric] ?? 0), 0) / arr.length;
+  const early = avg(studied.slice(0, k)), late = avg(studied.slice(-k));
+  const change = early ? Math.round(((late - early) / early) * 100) : null;
+  return (
+    <>
+      <div className="seg small" role="group" aria-label="Metric">
+        {DAY_METRICS.map(([key, l]) => (
+          <button key={key} className={metric === key ? "on" : ""} aria-pressed={metric === key}
+                  onClick={() => setMetric(key)}>{l}</button>
+        ))}
+      </div>
+      <DayChart
+        points={points} yKey={metric} unit={unit}
+        tooltip={(p) => p.reviews ? (
+          <><div><strong>{p.label}</strong></div>
+            <div>{p.median_hesitation_s}s hesitation · {p.again_rate_pct}% Again</div>
+            <div className="muted">{p.reviews} reviews · {p.median_think_s}s think</div></>
+        ) : (
+          <><div><strong>{p.label}</strong></div><div className="muted">No reviews</div></>
+        )}
+      />
+      {metric !== "reviews" && change != null && (
+        <p className="callout">
+          {Math.abs(change) < 5 ? <>{label} has held steady across these days.</>
+            : change < 0 ? <>{label} is <strong>down {Math.abs(change)}%</strong> from your first study days in this range to your latest. That's the right direction.</>
+            : <>{label} is <strong>up {change}%</strong> from your first study days in this range to your latest. Newer or harder cards often do this.</>}
+        </p>
+      )}
+    </>
+  );
+}
+
+function DeckTable({ decks, selected, onPick }) {
+  if (!decks.length) return null;
+  return (
+    <>
+      <table className="clickable">
+        <thead>
+          <tr><th>Deck</th><th className="num">Reviews</th><th className="num">Hesitation</th><th className="num">Again rate</th></tr>
+        </thead>
+        <tbody>
+          {decks.map((d) => (
+            <tr key={d.deck} onClick={() => onPick(d.deck)} className={d.enough ? "" : "dim"}
+                title={d.deck === selected ? "" : "Show only this deck"}>
+              <td>{d.deck}</td>
+              <td className="num">{d.reviews}</td>
+              <td className="num">{d.median_hesitation_s}s</td>
+              <td className="num">{d.again_rate_pct}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="callout">Hardest first, by Again rate. Greyed decks have under 10 reviews, too few to rank. Click a deck to focus on it.</p>
+    </>
+  );
 }
 
 const fmtMin = (m) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`);
@@ -171,7 +282,7 @@ function ByButton({ b }) {
 }
 
 export default function App() {
-  const data = useAnkiData();
+  const { data, busy, request } = useAnkiData();
   useEffect(() => {
     if (data?.meta) document.documentElement.dataset.theme = data.meta.night_mode ? "dark" : "light";
   }, [data]);
@@ -180,7 +291,7 @@ export default function App() {
     return (
       <div className="empty">
         Couldn't load your stats.<br />
-        Close this window and open Tools → Anki Clicker → Stats again. If it keeps happening,
+        Close this window and open Tools → Anki Clicker → My study insights again. If it keeps happening,
         send Azeem this: <code>bridge={String(window.__ankiClickerTimeout.hasBridge)}</code>
       </div>
     );
@@ -188,7 +299,9 @@ export default function App() {
   if (!data) return <div className="empty">Loading your stats…</div>;
   const o = data.overview;
   const m = data.meta || {};
-  if (!o.reviews) return <div className="empty">No reviews logged yet. Do a few reviews and come back.</div>;
+  const f = data.filters || { deck: null, range: "all", decks: [], total_reviews: o.reviews };
+  if (!f.total_reviews) return <div className="empty">No reviews logged yet. Do a few reviews and come back.</div>;
+  const scope = [f.deck || "all decks", rangeText[f.range]].filter(Boolean).join(" ");
 
   return (
     <div className="wrap">
@@ -198,6 +311,11 @@ export default function App() {
           {m.connected ? (m.unsynced ? `${m.unsynced} waiting to upload` : "All synced") : "Not connected"}
         </span>
       </header>
+      <Filters f={f} busy={busy} onChange={request} />
+
+      {!o.reviews ? (
+        <div className="empty">No reviews in {scope}. Try a longer date range or another deck.</div>
+      ) : (<>
 
       <section className="tiles">
         <Tile label="Reviews" value={o.reviews.toLocaleString()} />
@@ -208,9 +326,24 @@ export default function App() {
       </section>
 
       <section className="card">
+        <h2>Day by day</h2>
+        <p className="sub">One point per day for {scope}. Gaps are days you didn't study.</p>
+        <Daily points={data.daily || []} />
+      </section>
+
+      {(data.decks || []).length > 1 && (
+        <section className="card">
+          <h2>{f.deck ? `Inside ${f.deck}` : "Your decks compared"}</h2>
+          <p className="sub">Each deck {rangeText[f.range] || "over all time"}.</p>
+          <DeckTable decks={data.decks} selected={f.deck} onPick={(d) => request({ deck: d, range: f.range })} />
+        </section>
+      )}
+
+      <section className="card">
         <h2>Your fatigue curve</h2>
         <p className="sub">How much slower you get as a session goes on, compared with your first 10 minutes.
-          Dashed line: {data.fatigue.threshold_pct ?? 10}% slower.</p>
+          Dashed line: {data.fatigue.threshold_pct ?? 10}% slower. Always uses all decks and all time,
+          since one sitting often mixes decks.</p>
         <Fatigue f={data.fatigue} />
       </section>
 
@@ -238,8 +371,10 @@ export default function App() {
         <ByButton b={data.by_button} />
       </section>
 
+      </>)}
+
       <footer>
-        Computed on this computer from {o.sessions} session{o.sessions === 1 ? "" : "s"}. Card text never leaves it; only timings are uploaded.
+        Computed on this computer from {o.sessions} session{o.sessions === 1 ? "" : "s"} in {scope}. Card text never leaves it; only timings are uploaded.
         {m.last_sync ? ` Last sync: ${m.last_sync}` : ""}
       </footer>
     </div>

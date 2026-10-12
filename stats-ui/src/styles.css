@@ -79,3 +79,18 @@ td .deck { color: var(--text-3); font-size: 12px; }
 
 footer { color: var(--text-3); font-size: 12px; margin-top: 8px; }
 .empty { text-align: center; color: var(--text-2); padding: 60px 0; }
+
+/* Filter bar: deck picker + date range */
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+.filters select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; max-width: 100%; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button { font: inherit; font-size: 13px; color: var(--text-2); background: none; border: 0; padding: 6px 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button.on { background: var(--series); color: #fff; }
+.seg.small { margin-bottom: 8px; }
+.seg.small button { font-size: 12px; padding: 4px 10px; }
+.muted { color: var(--text-2); }
+.small { font-size: 12px; }
+table.clickable tbody tr { cursor: pointer; }
+table.clickable tbody tr:hover td { background: var(--page); }
+tr.dim td { color: var(--text-3); }

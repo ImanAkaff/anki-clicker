@@ -5,6 +5,7 @@ gui_hooks = types.SimpleNamespace(**{n: [] for n in [
 class _DB:
     def __init__(self):
         self.c = sqlite3.connect(":memory:"); self.c.execute("create table revlog (id integer primary key, cid integer, ease integer)")
+        self.c.execute("create table cards (id integer primary key, did integer, odid integer)")
     def scalar(self, sql, *a): return self.c.execute(sql, a).fetchone()[0]
     def list(self, sql, *a): return [r[0] for r in self.c.execute(sql, a)]
     def all(self, sql, *a): return self.c.execute(sql, a).fetchall()
@@ -20,7 +21,11 @@ class _Card:
     def question(self): return f"<style>.x{{}}</style><div>What is card {self.cid}?</div><br>[sound:a.mp3]"
 class _Col:
     db = _DB()
-    decks = types.SimpleNamespace(name_if_exists=lambda d: "MCAT::Bio")
+    # Deck 1 = MCAT::Bio, deck 2 = MCAT::Chem, deck 99 = a filtered (custom study) deck
+    _names = {1: "MCAT::Bio", 2: "MCAT::Chem", 99: "Filtered Deck 1"}
+    decks = types.SimpleNamespace(
+        name_if_exists=lambda d: _Col._names.get(d),
+        get=lambda d, default=False: ({"id": d, "dyn": d == 99} if d in _Col._names else None))
     def get_card(self, cid): return _Card(cid)
 class _TM:
     def run_in_background(self, task, done): done(types.SimpleNamespace(result=lambda: types.SimpleNamespace(error="(fake) offline", uploaded=0)))
